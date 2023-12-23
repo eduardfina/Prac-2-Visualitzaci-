@@ -1,0 +1,430 @@
+---
+title: 'Visualització de dades: PRA2 - Projecte de Visualització'
+author: "Autor: Eduard López i Fina"
+date: "Desembre 2023"
+output:
+  html_document:
+    highlight: default
+    number_sections: yes
+    theme: cosmo
+    toc: yes
+    toc_depth: 2
+    includes:
+      in_header: UOC-PRAC-header.html
+  word_document: default
+  pdf_document:
+    highlight: zenburn
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+ 
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+if (!require('ggplot2')) install.packages('ggplot2'); library('ggplot2')
+if (!require('plotly')) install.packages('plotly'); library('plotly')
+if (!require('tidyverse')) install.packages('tidyverse'); library('tidyverse')
+if (!require('treemap')) install.packages('treemap'); library('treemap')
+if (!require('scales')) install.packages('scales'); library('scales')
+if(!require('Rmisc')) install.packages('Rmisc'); library('Rmisc')
+if(!require('lessR')) install.packages('lessR'); library('lessR')
+if(!require('xfun')) install.packages('xfun'); library('xfun')
+if(!require('corrplot')) install.packages('corrplot'); library('corrplot')
+if (!require('factoextra')) install.packages('factoextra'); library('factoextra')
+if (!require('GGally')) install.packages('GGally'); library('GGally')
+if (!require('dplyr')) install.packages('dplyr'); library('dplyr')
+```
+
+******
+# Plantejament
+******
+
+Per la resolució d'aquesta pràctica utilitzarem el dataset [Marketing Campaign](https://www.kaggle.com/datasets/rodsaldanha/arketing-campaign) de Kaggle, aquest conté 2.240 registres sobre l'impacte de les campanyes de marketing sobre cada client, amb la respectiva informació personal i de compres d'aquests. L'objectiu d'aquest conjunt de dades és aconseguir optimitzar les campanyes de marketing de cares al futur amb la missió de maximitzar-ne les conversions.
+
+La forma més òptima de millorar el ratio de conversió de les campanyes seria tenir campanyes personalitzades per cada client, però com que pot ser complexe i molt costos ens haurem de centrar en el que vol la majoria, per tant en aquesta visualització ens centrarem en la següent pregunta:
+
+Quin és el client ideal i quina és la seva campanya de marketing òptima?
+
+******
+# Selecció del joc de dades i neteja
+******
+
+Com he explicat al primer apartat, el joc de dades escollit és [Marketing Campaign](https://www.kaggle.com/datasets/rodsaldanha/arketing-campaign) de Kaggle, a continuació el carreguem a la nostre pràctica:
+
+```{r message= FALSE, warning=FALSE}
+marketing <- read.csv('marketing_campaign.csv', head = TRUE, sep=";")
+str(marketing)
+```
+
+Veiem com conté un bon volum de registres amb 2.240 observacions i una gran varietat d'informació amb 29 variables, procedim a explicar-les i dividir-les segons categòriques, binàries i numèriques:
+
+## Categòriques
+
++ **Education:** Nivell educatiu del client.
++ **Marital:** Estat civil del client.
+
+## Binàries
+
++ **Complain:** 1 si el client ha presentat una queixa en els últims 2 anys, 0 altrament.
++ **Response:** 1 si el client va acceptar l'oferta a l'última campanya, 0 altrament.
++ **AcceptedCmp1:** 1 si el client va acceptar l'oferta a la 1a campanya, 0 altrament.
++ **AcceptedCmp2:** 1 si el client va acceptar l'oferta a la 2a campanya, 0 altrament.
++ **AcceptedCmp3:** 1 si el client va acceptar l'oferta a la 3a campanya, 0 altrament.
++ **AcceptedCmp4:** 1 si el client va acceptar l'oferta a la 4a campanya, 0 altrament.
++ **AcceptedCmp5:** 1 si el client va acceptar l'oferta a la 5a campanya, 0 altrament.
+
+## Numèriques
+
++ **DtCustomer:** Data d'inscripció del client a l'empresa.
++ **Kidhome:** Nombre de fills petits al domicili del client.
++ **Teenhome:** Nombre d'adolescents al domicili del client.
++ **Income:** Ingressos anuals del domicili del client.
++ **MntFishProducts:** Quantitat gastada en productes de peix en els últims 2 anys.
++ **MntMeatProducts:** Quantitat gastada en productes de carn en els últims 2 anys.
++ **MntFruits:** Quantitat gastada en productes de fruita en els últims 2 anys.
++ **MntSweetProducts:** Quantitat gastada en productes dolços en els últims 2 anys.
++ **MntWines:** Quantitat gastada en productes de vi en els últims 2 anys.
++ **MntGoldProds:** Quantitat gastada en productes d'or en els últims 2 anys.
++ **NumDealsPurchases:** Nombre de compres realitzades amb descompte.
++ **NumCatalogPurchases:** Nombre de compres realitzades amb l'ús de catàleg.
++ **NumStorePurchases:** Nombre de compres realitzades directament a les botigues.
++ **NumWebPurchases:** Nombre de compres realitzades a través del lloc web de l'empresa.
++ **NumWebVisitsMonth:** Nombre de visites al lloc web de l'empresa en l'últim mes.
++ **Recency:** Nombre de dies des de l'última compra.
+
+A continuació estudiem possibles anomalies:
+
+```{r message= FALSE, warning=FALSE}
+summary(marketing)
+```
+A simple vista ja veiem que hi han algunes dades extremes com el mínim Year_Birth i els màxims Income i NumWebPurchases entre d'altres. Solucionarem aquest problema més endavant.Ara estudiem els valors en blanc i nuls:
+
+```{r message= FALSE, warning=FALSE}
+# Valors en blanc
+colSums(marketing=="")
+# Valors nuls
+colSums(is.na(marketing))
+```
+Com podem veure no trobem valors en blanc, en canvi si que trobem alguns valors nuls en quant als ingressos dels clients (Income), entenc que això és degut a que és una dada molt sensible i no tots els clients deuen estar disposats a compartir-la. En resum, tot i aquesta petita quantitat de valors nuls el conjunt de dades ja està molt ben netejat. Simplement eliminem les dades amb valors nuls:
+
+```{r message= FALSE, warning=FALSE}
+no_na_marketing <- na.omit(marketing)
+colSums(is.na(no_na_marketing))
+```
+Un cop hem eliminat les dade NA ens és més fàcil eliminar els outliers, per fer-ho utilitzarem el mètode IQR:
+
+```{r message= FALSE, warning=FALSE}
+replace_outliers <- function(column) {
+  if (length(unique(column)) > 2 ) {
+    column_iqr <- IQR(column, na.rm = TRUE)
+    
+    upper_bound <- quantile(column, 0.75, na.rm = TRUE) + 1.5 * column_iqr
+    lower_bound <- quantile(column, 0.25, na.rm = TRUE) - 1.5 * column_iqr
+    
+    outliers <- column > upper_bound | column < lower_bound
+    
+    column[outliers] <- median(column, na.rm = TRUE)
+  }
+  
+  return(column)
+}
+
+numeric_columns <- sapply(no_na_marketing, is.numeric)
+no_na_marketing[, numeric_columns] <- apply(no_na_marketing[, numeric_columns], 2, replace_outliers)
+
+summary(no_na_marketing)
+```
+
+Finalment mostrem l'histograma dels atributs més rellevants:
+
+```{r message= FALSE, warning=FALSE}
+histList<- list() 
+n = c("Year_Birth", "Income", "Kidhome", "Teenhome", "Recency", "MntWines", "MntFruits", "MntMeatProducts", "MntFishProducts", "MntSweetProducts",
+      "NumWebPurchases", "NumStorePurchases") 
+
+marketingAux= no_na_marketing %>% select(all_of(n))
+for(i in 1:ncol(marketingAux)){
+  col <- names(marketingAux)[i]
+  ggp <- ggplot(marketingAux, aes_string(x = col)) +
+    geom_histogram(bins = 30, fill = "cornflowerblue", color = "black") 
+  histList[[i]] <- ggp
+}
+multiplot(plotlist = histList, cols = 3)
+```
+
+Un cop vistes les gràfiques m'ha sorprès veure que la compra de vi és la més recurrent, seguida d'aprop de la compra de carn i de lluny dels altres productes. Per altre banda veiem com el nombre de dies de l'última compra és bastant variat, les famílies solen tenir entre 0-1 nens o adolescents i el volum de compres està bastant igualat entre la botiga i la web.
+
+******
+# Preparació de les dades
+******
+
+A l'apartat anterior ja hem netejat les dades, per tant ja podriem dir que estan preparades per ser analitzades. No obstant com que només tenim 2 variables categòriques discretitzarem variables numèriques més per tenir més varietat. A més ajuntarem les variables Teenhome i Kidhome per crear una variable Children, les vendes totals dels productes i el nombre de compres global.
+
+```{r message= FALSE, warning=FALSE}
+clean_marketing <- no_na_marketing
+
+clean_marketing$Age <- cut(clean_marketing$Year_Birth, breaks = c(1940, 1958, 1978, 1998),
+                              labels = c(">65", "45-65", "25-45"))
+
+clean_marketing$Social_Class <- cut(clean_marketing$Income, breaks = c(0, 30000, 75000, 200000),
+                                       labels = c("Lower", "Middle", "Upper"))
+
+clean_marketing$Children <- clean_marketing$Kidhome + clean_marketing$Teenhome
+
+clean_marketing$MntTotal <- rowSums(clean_marketing[, 10:15], na.rm = TRUE)
+
+clean_marketing$TotalPurchases <- rowSums(clean_marketing[, 16:20], na.rm = TRUE)
+
+```
+
+A continuació mostrem els histogrames de les noves variables generades:
+
+```{r message= FALSE, warning=FALSE}
+n = c("Age", "Social_Class") 
+
+par(mfrow = c(2, 3))
+for (col in n) {
+  # Create a summary table of the factor levels
+  class_summary <- table(clean_marketing[[col]])
+  
+  # Calculate percentages
+  class_percentages <- prop.table(class_summary) * 100
+  
+  # Create a pie chart with percentages in labels
+  pie(class_summary, 
+      labels = paste(names(class_summary), ": ", sprintf("%.1f%%", class_percentages)), 
+      main = paste(col, " Distribution"),
+      cex = 0.8) # Adjust label font size if needed
+}
+
+histList<- list()
+```
+
+******
+# Anàlisi dels diferents grups socials
+******
+
+Un cop tenim les noves variables, estudiarem el consum dels clients segons el seu grup social, per començar veurem quin grup social gasta més individualment.
+
+```{r message= FALSE, warning=FALSE}
+mean_plot <- clean_marketing %>%
+  group_by(Social_Class) %>%
+  dplyr::summarise(Mean_MntTotal = mean(MntTotal)) %>%
+  ggplot(aes(x = Social_Class, y = Mean_MntTotal, fill = Social_Class)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "Mean MntTotal for each Social Class",
+       x = "Social Class",
+       y = "Mean MntTotal",
+       fill = "Social Class")
+
+mean_plot %>%
+  ggplotly()
+```
+
+Com podem veure un client de classe alta gasta més del doble que un client de classe mitja. Amb aquesta primera gràfica sembla que hauriem d'enfocar les nostres campanyes a aquests clients, però seria això el més òptim? Com que la mitja pot enganyar estudiem el volum total de diners gastats segons classe social.
+
+```{r message= FALSE, warning=FALSE}
+total_plot <- clean_marketing %>%
+  group_by(Social_Class) %>%
+  dplyr::summarise(Total_MntTotal = sum(MntTotal)) %>%
+  ggplot(aes(x = Social_Class, y = Total_MntTotal, fill = Social_Class)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "Total MntTotal for each Social Class",
+       x = "Social Class",
+       y = "Total MntTotal",
+       fill = "Social Class")
+
+total_plot %>%
+  ggplotly()
+```
+
+Amb la gràfica del total gastat veiem com la classe mitja gasta més del doble que la classe alta, per tant refutem la conclusió extreta a l'anterior gràfica i agafem la classe mitja com a client objectiu. Igualment, com que la classe alta ens genera aproximadament 1/3 dels ingressos totals seguirem estudiant aquest client també.
+
+A continuació visualitzem un desglosament dels ingressos generats segons classe i tipus de producte.
+
+```{r message= FALSE, warning=FALSE}
+
+clean_marketing_long <- clean_marketing %>%
+  gather(key = "Product", value = "MntProduct", MntWines:MntGoldProds) %>%
+  group_by(Social_Class, Product) %>%
+  dplyr::summarise(Total_MntProduct = sum(MntProduct))
+
+clean_marketing_long <- clean_marketing_long %>% arrange(Social_Class)
+clean_marketing_long$id <- seq(1, nrow(clean_marketing_long))
+
+# Get the name and the y position of each label
+label_data <- clean_marketing_long
+number_of_bar <- nrow(label_data)
+angle <- 90 - 360 * (label_data$id-0.5) /number_of_bar
+label_data$hjust <- ifelse( angle < -90, 1, 0)
+label_data$angle <- ifelse(angle < -90, angle+180, angle)
+
+# Make the plot
+p <- ggplot(clean_marketing_long, aes(x=as.factor(id), y=Total_MntProduct, fill=Social_Class)) +
+  geom_bar(stat="identity", alpha=0.5) +
+  scale_y_continuous(trans = sqrt_trans()) +
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank()
+  ) +
+  coord_polar() + 
+  geom_text(data=label_data, aes(x=id, y=Total_MntProduct+10, label=Product, hjust=hjust), color="black", fontface="bold",alpha=0.6, size=2.5, angle= label_data$angle, inherit.aes = FALSE ) 
+
+p
+
+```
+
+Detectem que els productes més comprats tant per la classe mitja com per la classe alta són els vins i les carns. També podem veure que per la classe baixa independentment del producte la quantitat d'ingressos que ens generen és molt baixa, per tant podem pendre la decisió de renunciar a fer campanyes de marketing destinades als clients de classe baixa ja que inclús en el cas més positiu de conversió de vendes no ens suposen uns grans ingressos.
+
+Per tant, un cop tenim definits els dos grups socials als quals ens volem focalitzar (Middle i Upper) i els productes que volem publicitar (Wines i Meat) anem a veure quin dels grups socials accepten més campanyes publicitaries.
+
+```{r message= FALSE, warning=FALSE}
+# Reshape the data
+accepted_data <- clean_marketing %>%
+  gather(key = "Campaign", value = "Accepted", AcceptedCmp3:AcceptedCmp2, Response) %>%
+  group_by(Social_Class) %>%
+  dplyr::summarise(Total_Accepted = sum(Accepted))
+
+# Filter out 'Lower' social class
+accepted_data <- accepted_data %>%
+  filter(Social_Class != "Lower")
+
+# Sum up the total accepted campaigns for 'Middle' and 'Upper' social classes
+accepted_data <- accepted_data %>%
+  group_by(Social_Class) %>%
+  dplyr::summarise(Total_Accepted = sum(Total_Accepted))
+
+# Create the pie chart
+pie_chart <- ggplot(accepted_data, aes(x="", y=Total_Accepted, fill=Social_Class)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar("y", start=0) +
+  theme_void() +
+  labs(title = "Total Accepted Campaigns for Middle and Upper Social Classes")
+
+print(pie_chart)
+```
+Sorprenentment la classe alta accepta casi tantes campanyes com la classe mitja, donat que hi ha el doble de clients dins la classe mitja és una dada molt a tenir en compte ja que a la classe alta amb la meitat de campanyes aconseguim una conversió casi similar i amb l'afegit que aquests es solen gastar el doble que la classe mitja.
+
+Investiguem ara a quina fase han estat acceptades aquestes campanyes.
+
+```{r message= FALSE, warning=FALSE}
+# Reshape the data
+accepted_data <- clean_marketing %>%
+  gather(key = "Campaign", value = "Accepted", AcceptedCmp3:AcceptedCmp2, Response) %>%
+  group_by(Social_Class, Campaign) %>%
+  dplyr::summarise(Total_Accepted = sum(Accepted))
+
+# Filter out 'Lower' social class
+accepted_data <- accepted_data %>%
+  filter(Social_Class != "Lower")
+
+# Create the treemap
+treemap(accepted_data,
+        index = c("Social_Class", "Campaign"),
+        vSize = "Total_Accepted",
+        title = "When Are The Campaigns Accepted For Each Social Class")
+
+```
+
+De nou veiem com és molt més rentable fer campanyes per la classe alta que per la classe mitja, aquesta accepta una quantiat més elevada de campanyes durant les primeres fases fent així que sigui molt més econòmic.
+
+Per veure més bé el que suposaria fer camapanyes per cadascuna de les classes anem a visualitzar el percentatge de conversió de les campanyes.
+
+```{r message= FALSE, warning=FALSE}
+# Filter out 'Lower' social class
+filtered_data <- clean_marketing %>%
+  filter(Social_Class != "Lower")
+
+# Calculate the accepted percentage for each campaign and social class
+accepted_data <- filtered_data %>%
+  gather(key = "Campaign", value = "Accepted", AcceptedCmp3:AcceptedCmp2, Response) %>%
+  group_by(Social_Class, Campaign) %>%
+  dplyr::summarise(Accepted_Percentage = mean(Accepted, na.rm = TRUE) * 100)
+
+# Create the bar plot
+bar_plot <- ggplot(accepted_data, aes(x=Social_Class, y=Accepted_Percentage, fill=Campaign)) +
+  geom_bar(stat="identity", position="dodge") +
+  theme_minimal() +
+  labs(x = "Social Class", y = "Accepted Percentage (%)", fill = "Campaign",
+       title = "Accepted Percentage for each Social Class and Campaign")
+
+bar_plot %>%
+  ggplotly()
+```
+
+Podem veure com la classe alta és molt més propensa a acceptar una campanya de marketing, inclús sorprenentment amb una acceptació del 28% en una primera fase. 
+
+Ara ja sabem que la nostre campanya de marketing haurà d'anar enfocada a la classe alta, ja que són els que més percentatge de campanyes accepten i els que més gasten. També sabem que haurà de ser sobre vins o carn, els productes més comprats per aquesta classe.
+
+Un cop ja sabem el nostre client potencial investiguem en quin moment de l'any hem de llançar la campanya.
+
+```{r message= FALSE, warning=FALSE}
+
+# Convert Dt_Customer to Date type and extract year and month
+clean_marketing$Dt_Customer <- as.Date(clean_marketing$Dt_Customer)
+clean_marketing$YearMonth <- format(clean_marketing$Dt_Customer, "%Y-%m")
+
+# Calculate the total number of accepted campaigns for each social class per month
+accepted_data <- clean_marketing %>%
+  mutate(Total_Accepted = AcceptedCmp1 + AcceptedCmp2 + AcceptedCmp3 + AcceptedCmp4 + AcceptedCmp5 + Response) %>%
+  group_by(YearMonth, Social_Class) %>%
+  dplyr::summarise(Total_Accepted = sum(Total_Accepted))
+
+accepted_data <- accepted_data %>%
+  filter(Social_Class == "Upper")
+
+# Create the line chart
+line_chart <- ggplot(accepted_data, aes(x=YearMonth, y=Total_Accepted, group=1)) +
+  geom_line(color="darkgreen") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = "Month", y = "Total Number of Accepted Campaigns",
+       title = "Total Number of Accepted Campaigns for Upper Class")
+
+line_chart%>%
+  ggplotly()
+
+
+```
+
+Veiem com no segueix cap patró, el 2013-05 hi va haver una forta pujada de clients però no es va repetir al 2013-05 per tant considerem que s'ha donat per factors externs al nostre dataset. No definim cap mes en específic per llançar la campanya.
+
+Per finalitzar el nostre estudi investiguem per quina vía compra més el nostre client òptim, per saber per on implementar aquesta campanya.
+
+```{r message= FALSE, warning=FALSE}
+# Filter out 'Lower' social class
+filtered_data <- clean_marketing %>%
+  filter(Social_Class == "Upper")
+
+# Calculate the total purchase for each campaign and social class
+accepted_data <- filtered_data %>%
+  gather(key = "Campaign", value = "Purchase", NumDealsPurchases:NumStorePurchases) %>%
+  group_by(Social_Class, Campaign) %>%
+  dplyr::summarise(Accepted_Total = sum(Purchase, na.rm = TRUE))
+
+# Create the bar plot
+bar_plot <- ggplot(accepted_data, aes(x=Campaign, y=Accepted_Total, fill=Campaign)) +
+  geom_bar(stat="identity", position="dodge") +
+  theme_minimal() +
+  labs(x = "Purchases", y = "Total Purchases", fill = "Campaign",
+       title = "Total Type Purchases per Upper Class")
+
+bar_plot %>%
+  ggplotly()
+```
+
+Veiem com el mètode de compra més escollit és la botiga, tot seguit del catàleg i la web, per tant aquesta campanya s'haurà de fer majoritariament per la web i promocionada també al catàleg i la web.
+
+******
+# Conclusions
+******
+
+Com a conclusió d'aquest anàlisi podem dir que el nostre client òptim és de classe alta ja que gasta el doble que el de classe mitja i accepta la mateixa quantitat de campanyes tot i ser només la meitat de clients.
+
+En quant a la campanya, podem dir que haurà de ser sobre vins i carn, en presencial a la botiga tot i que promocionada també al catàleg i per la web. Aquesta campanya es podrà fer en qualsevol moment ja que no hem aconseguit veure un patró temporal de vendes.
+
